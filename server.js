@@ -1,4 +1,6 @@
 // ------------------ Imports ------------------
+require('dotenv').config(); // load env FIRST
+
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
@@ -17,29 +19,33 @@ const Course = require('./models/Course');
 const app = express();
 
 // Middleware
-// Allow credentials so session cookies are sent from the browser
 app.use(cors({ origin: true, credentials: true }));
 app.use(bodyParser.json());
 app.use(cookieParser());
+
 app.use(session({
   secret: process.env.SESSION_SECRET || 'student-portal-secret',
   resave: false,
   saveUninitialized: false,
-  cookie: { maxAge: 1000 * 60 * 60 * 24 * 7 } // 7 days
+  cookie: {
+    secure: false, // set true ONLY in HTTPS (Render handles it automatically)
+    maxAge: 1000 * 60 * 60 * 24 * 7
+  }
 }));
 
-// Serve static files from /public
+// Serve static files
 app.use(express.static(path.join(__dirname, 'public')));
+
 // ------------------ MongoDB Connection ------------------
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb+srv://akash_k080:8660543860@cluster0.wzdeyrm.mongodb.net/student_portal?retryWrites=true&w=majority';
-mongoose.connect(MONGODB_URI, {
-  useNewUrlParser: true,
-  useUnifiedTopology: true
-})
+const MONGODB_URI = process.env.MONGODB_URI;
+
+mongoose.connect(MONGODB_URI)
 .then(async () => {
   console.log('✅ MongoDB connected');
+
   try {
     const count = await Course.countDocuments();
+
     if (count === 0) {
       const sampleCourses = [
         { title: 'Intro to Computer Science', description: 'Basics of CS', instructor: 'Dr. Priya Rao' },
@@ -47,42 +53,48 @@ mongoose.connect(MONGODB_URI, {
         { title: 'Physics for Engineers', description: 'Mechanics and thermodynamics', instructor: 'Dr. G. Sharma' },
         { title: 'Technical Communication', description: 'Writing for engineers', instructor: 'Ms. S. Iyer' }
       ];
+
       await Course.insertMany(sampleCourses);
       console.log('✅ Seeded sample courses');
     }
-  } catch (seedErr) {
-    console.warn('Could not seed courses:', seedErr && seedErr.message);
+
+  } catch (err) {
+    console.log('⚠️ Seeding skipped:', err.message);
   }
 })
-.catch(err => console.error('❌ MongoDB connection error:', err));
+.catch(err => {
+  console.error('❌ MongoDB connection error:', err.message);
+  process.exit(1); // stop app if DB fails
+});
 
-// ------------------ Frontend Routes ------------------
-// Home (login)
+// ------------------ Routes ------------------
+
+// Frontend routes
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// Registration
 app.get(['/register', '/registration'], (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'registration.html'));
 });
 
-// Dashboard
 app.get('/dashboard', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'dashboard.html'));
 });
 
-// ------------------ API Routes ------------------
-// Mount user routes under /api so frontend calls to /api/register and /api/login work
+// API routes
 app.use('/api', userRoutes);
 app.use('/api/courses', courseRoutes);
 app.use('/api/enrollments', enrollmentRoutes);
 
-// ------------------ Fallback ------------------
+// fallback
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
 // ------------------ Start Server ------------------
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => console.log(`🚀 Server running on http://localhost:${PORT}`));
+
+app.listen(PORT, () => {
+  console.log(`🚀 Server running on port ${PORT}`);
+});
